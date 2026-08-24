@@ -17,15 +17,12 @@ def formato_euros(valor):
 def cargar_datos_base(ambito_busca):
     client = BDNSClient()
     
-    # Se é Ames, pedimos o órgano 35. Se é nacional, facemos a petición xenérica permitida.
     try:
         if ambito_busca == "Concello de Ames":
             resultados = list(client.fetch_concesiones_busqueda(organos="35"))
         else:
-            # Para evitar erros de validación masivos, consultamos sen filtros restritivos inválidos
             resultados = list(client.fetch_concesiones_busqueda())
     except Exception:
-        # Fallback de seguridade se a API estatal falla
         resultados = list(client.fetch_concesiones_busqueda(organos="35"))
 
     df = pd.DataFrame(resultados)
@@ -33,13 +30,12 @@ def cargar_datos_base(ambito_busca):
     if df.empty:
         return df
 
-    # Identificar posíbeis nomes orixinais dos campos da BDNS
     col_fecha = next((c for c in ['fecConcesion', 'fechaConcesion', 'fecha_concesion', 'fecha'] if c in df.columns), None)
     col_importe = next((c for c in ['impConcesion', 'importeConcesion', 'importe', 'impSubvencion'] if c in df.columns), None)
     col_beneficiario = next((c for c in ['desBeneficiario', 'beneficiario', 'nombreBeneficiario', 'receptor'] if c in df.columns), None)
     col_programa = next((c for c in ['desConvocatoria', 'programa', 'numConvocatoria'] if c in df.columns), None)
     
-    col_id_convocatoria = 'numeroConvocatoria' if 'numeroConvocatoria' in df.columns else None
+    col_id_convocatoria = 'idConvocatoria' if 'idConvocatoria' in df.columns else None
     col_id_persona = 'idPersona' if 'idPersona' in df.columns else None
     col_convocatoria = 'convocatoria' if 'convocatoria' in df.columns else None
     col_nivel3 = 'nivel3' if 'nivel3' in df.columns else None
@@ -48,7 +44,6 @@ def cargar_datos_base(ambito_busca):
     if not col_fecha:
         return pd.DataFrame()
 
-    # Mapeo e limpeza normalizada
     df['fecha_concesion'] = pd.to_datetime(df[col_fecha], errors='coerce')
     df['importe'] = pd.to_numeric(df[col_importe] if col_importe else 0, errors='coerce').fillna(0)
     df['beneficiario'] = df[col_beneficiario] if col_beneficiario else "Descoñecido"
@@ -60,11 +55,9 @@ def cargar_datos_base(ambito_busca):
     df['concedente'] = df[col_nivel3] if col_nivel3 else "Sen datos do concedente"
     df['bases_reguladoras'] = df[col_bases] if col_bases else "Sen datos das bases"
 
-    # URLs
     df['url_convocatoria'] = "https://www.pap.hacienda.gob.es/bdnstrans/GE/es/convocatorias/" + df['id_convocatoria']
     df['url_persona'] = "https://www.pap.hacienda.gob.es/bdnstrans/GE/es/concesiones/consulta/" + df['id_persona']
 
-    # Datas derivadas
     df['ano'] = df['fecha_concesion'].dt.year
     df['ano_mes'] = df['fecha_concesion'].dt.to_period('M').astype(str)
     
@@ -96,7 +89,6 @@ try:
     if df.empty:
         st.warning("Non se atoparon datos dispoñibles.")
     else:
-        # Aplicamos o filtro local de beneficiario (NIF ou nome) de forma segura sen erros de API
         if texto_beneficiario.strip():
             filtro = texto_beneficiario.strip().lower()
             df = df[df['beneficiario'].astype(str).str.lower().str.contains(filtro, na=False)]
@@ -182,7 +174,7 @@ try:
                     "url_convocatoria": st.column_config.LinkColumn(
                         "ID Convocatoria",
                         help="Fai clic para abrir a convocatoria na BDNS",
-                        display_text=r"https://www\.pap\.hacienda.gob.es/bdnstrans/GE/es/convocatorias/(.*)"
+                        display_text=r"https://www\.pap\.hacienda\.gob\.es/bdnstrans/GE/es/convocatorias/(.*)"
                     ),
                     "convocatoria": st.column_config.TextColumn(
                         "Convocatoria",
@@ -227,8 +219,8 @@ try:
 
             st.divider()
 
-            # 4. Frecuencia e Convocatorias Recurrentes
-            st.subheader("📅 Frecuencia de Concesións")
+            # 4. Frecuencia e Convocatorias Recurrentes (Número de Concesións)
+            st.subheader("📅 Frecuencia de Concesións (Número)")
             tab_ano, tab_mes = st.tabs(["Por Ano", "Por Mes (Evolución)"])
 
             with tab_ano:
@@ -275,6 +267,59 @@ try:
                     hovertemplate="Mes: %{x}<br>Concesións: %{y}<br>Importe Total: %{customdata[0]:,.2f} €<extra></extra>"
                 )
                 st.plotly_chart(fig_mes, use_container_width=True)
+
+            st.divider()
+
+            # 5. Evolución Económica (Importes por Ano e Mes)
+            st.subheader("💶 Evolución Económica (Importe Total en €)")
+            tab_ano_imp, tab_mes_imp = st.tabs(["Importe por Ano", "Importe por Mes (Evolución)"])
+
+            with tab_ano_imp:
+                por_ano_imp = (
+                    df.groupby('ano')
+                    .agg(importe_total=('importe', 'sum'), num_concesions=('importe', 'count'))
+                    .reset_index()
+                    .dropna(subset=['ano'])
+                )
+                
+                fig_ano_imp = px.bar(
+                    por_ano_imp,
+                    x='ano',
+                    y='importe_total',
+                    custom_data=['num_concesions'],
+                    labels={'ano': 'Ano', 'importe_total': 'Importe Total (€)'},
+                    title="Importe Total Concedido por Ano"
+                )
+                fig_ano_imp.update_layout(separators=",.")
+                fig_ano_imp.update_xaxes(type='category')
+                fig_ano_imp.update_yaxes(tickformat=",.2f", ticksuffix=" €")
+                fig_ano_imp.update_traces(
+                    hovertemplate="Ano: %{x}<br>Importe Total: %{y:,.2f} €<br>Concesións: %{customdata[0]}<extra></extra>"
+                )
+                st.plotly_chart(fig_ano_imp, use_container_width=True)
+
+            with tab_mes_imp:
+                por_mes_imp = (
+                    df.groupby('ano_mes')
+                    .agg(importe_total=('importe', 'sum'), num_concesions=('importe', 'count'))
+                    .reset_index()
+                )
+                por_mes_imp = por_mes_imp[por_mes_imp['ano_mes'] != 'NaT']
+                
+                fig_mes_imp = px.line(
+                    por_mes_imp,
+                    x='ano_mes',
+                    y='importe_total',
+                    custom_data=['num_concesions'],
+                    labels={'ano_mes': 'Ano-Mes', 'importe_total': 'Importe Total (€)'},
+                    title="Evolución Mensual do Importe Total Concedido"
+                )
+                fig_mes_imp.update_layout(separators=",.")
+                fig_mes_imp.update_yaxes(tickformat=",.2f", ticksuffix=" €")
+                fig_mes_imp.update_traces(
+                    hovertemplate="Mes: %{x}<br>Importe Total: %{y:,.2f} €<br>Concesións: %{customdata[0]}<extra></extra>"
+                )
+                st.plotly_chart(fig_mes_imp, use_container_width=True)
 
 except Exception as e:
     st.error(f"Ocorreu un erro ao extraer ou procesar os datos: {e}")
