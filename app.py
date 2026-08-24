@@ -290,7 +290,7 @@ try:
                     "convocatoria": st.column_config.TextColumn(
                         "Convocatoria",
                         help="Descrición da convocatoria da subvención",
-                        width="large" 
+                        width="large"
                     ),
                     "bases_reguladoras": st.column_config.LinkColumn(
                         "Bases Reguladoras",
