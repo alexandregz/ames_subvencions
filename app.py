@@ -35,7 +35,7 @@ def cargar_datos_base(ambito_busca):
     col_beneficiario = next((c for c in ['desBeneficiario', 'beneficiario', 'nombreBeneficiario', 'receptor'] if c in df.columns), None)
     col_programa = next((c for c in ['desConvocatoria', 'programa', 'numConvocatoria'] if c in df.columns), None)
     
-    col_id_convocatoria = 'idConvocatoria' if 'idConvocatoria' in df.columns else None
+    col_id_convocatoria = 'numeroConvocatoria' if 'numeroConvocatoria' in df.columns else None
     col_id_persona = 'idPersona' if 'idPersona' in df.columns else None
     col_convocatoria = 'convocatoria' if 'convocatoria' in df.columns else None
     col_nivel3 = 'nivel3' if 'nivel3' in df.columns else None
