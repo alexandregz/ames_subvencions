@@ -111,8 +111,6 @@ def cargar_datos_base(ambito_busca, nif_beneficiario, numero_convocatoria):
     df['numero_convocatoria'] = df[col_numero_convocatoria].astype(str) if col_numero_convocatoria else "0"
     df['id_persona'] = df[col_id_persona].astype(str) if col_id_persona else "0"
     df['convocatoria'] = df[col_convocatoria] if col_convocatoria else "Sen datos da convocatoria"
-    df['convocatoria'] = df['convocatoria'].apply(lambda x: textwrap.fill(str(x), width=70) if pd.notna(x) else "Sen datos da convocatoria")
-    
     df['concedente'] = df[col_nivel3] if col_nivel3 else "Sen datos do concedente"
     df['bases_reguladoras'] = df[col_bases].apply(arranxar_url) if col_bases else None
 
