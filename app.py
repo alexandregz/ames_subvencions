@@ -266,39 +266,171 @@ try:
             tabela_estilizada = df_tabla1[columnas_tabela].style.format({
                 'importe': formato_euros
             })
-            
-            st.dataframe(
-                tabela_estilizada, 
-                height=800,
-                use_container_width=True,
-                hide_index=True, 
-                column_config={
-                    "fecha_concesion": st.column_config.DatetimeColumn("Data", format="DD/MM/YYYY"),
-                    "url_persona": st.column_config.LinkColumn(
-                        "ID Persoa",
-                        help="Fai clic para ver as concesións desta persoa/entidade",
-                        display_text=r"https://www\.pap\.hacienda\.gob\.es/bdnstrans/GE/es/concesiones/consulta/(.*)"
-                    ),
-                    "beneficiario": "Beneficiario",
-                    "importe": "Importe",
-                    "concedente": "Concedente",
-                    "url_convocatoria": st.column_config.LinkColumn(
-                        "Nº Convocatoria",
-                        help="Fai clic para abrir a convocatoria na BDNS",
-                        display_text=r"https://www\.pap\.hacienda\.gob\.es/bdnstrans/GE/es/convocatorias/(.*)"
-                    ),
-                    "convocatoria": st.column_config.TextColumn(
-                        "Convocatoria",
-                        help="Descrición da convocatoria da subvención",
-                        width="large"
-                    ),
-                    "bases_reguladoras": st.column_config.LinkColumn(
-                        "Bases Reguladoras",
-                        help="Ligazón ás bases reguladoras no boletín correspondente",
-                        display_text="Ver Bases"
-                    )
+
+
+
+            from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
+
+
+            # --- Renderer JS para converter URL en link clicable ---
+            link_renderer = JsCode("""
+            class UrlCellRenderer {
+                init(params) {
+                    this.eGui = document.createElement('a');
+                    this.eGui.innerText = params.value ? params.value.split('/').pop() : '';
+                    this.eGui.setAttribute('href', params.value);
+                    this.eGui.setAttribute('target', '_blank');
+                    this.eGui.style.textDecoration = 'underline';
                 }
+                getGui() {
+                    return this.eGui;
+                }
+            }
+            """)
+
+            # --- Formateador de euros --
+            euro_formatter = JsCode("""
+            function(params) {
+                if (params.value == null) { return ''; }
+                return params.value.toLocaleString('es-ES', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                }) + ' €';
+            }
+            """)
+
+
+            df_filtrado = df_tabla1[columnas_tabela]
+
+            gb = GridOptionsBuilder.from_dataframe(df_filtrado)   # <-- df, non tabela_estilizada
+
+            # Configuración xeral por defecto
+            gb.configure_default_column(
+                resizable=True,
+                filter=True,
+                sortable=True,
             )
+
+            # --- Columnas concretas ---
+
+            gb.configure_column(
+                "fecha_concesion",
+                header_name="Data", maxWidth=80,
+                type=["dateColumnFilter", "customDateTimeFormat"],
+                custom_format_string="dd/MM/yyyy",
+            )
+
+            gb.configure_column(
+                "url_persona",
+                header_name="ID Persoa",
+                cellRenderer=link_renderer, maxWidth=90,
+                tooltipField="url_persona",  # amosa a URL completa ao pasar o rato
+            )
+
+            gb.configure_column(
+                "beneficiario",
+                header_name="Beneficiario",
+                minWidth=300, flex=2,
+            )
+
+            gb.configure_column(
+                "importe",
+                header_name="Importe",
+                type=["numericColumn"],
+                valueFormatter=euro_formatter, maxWidth=90,
+                cellStyle={"textAlign": "right"},  # números normalmente alíñanse á dereita
+            )
+
+            gb.configure_column(
+                "concedente",
+                header_name="Concedente",
+            )
+
+            gb.configure_column(
+                "url_convocatoria",
+                header_name="Nº Convocatoria",
+                cellRenderer=link_renderer, maxWidth=120,
+                tooltipField="url_convocatoria",
+            )
+
+            gb.configure_column(
+                "convocatoria",
+                header_name="Convocatoria",
+                wrapText=True,
+                autoHeight=True,
+                cellStyle={"white-space": "normal", "line-height": "1.4"},
+                minWidth=300, flex=2,
+                tooltipField="convocatoria",  # texto completo en tooltip tamén
+            )
+
+            gb.configure_column(
+                "bases_reguladoras",
+                header_name="Bases reguladoras",
+                cellRenderer=link_renderer,
+                tooltipField="bases_reguladoras",  # amosa a URL completa ao pasar o rato
+            )
+
+            grid_options = gb.build()
+            grid_options["onGridReady"] = JsCode("""
+            function(params) {
+                var allColumnIds = [];
+                params.columnApi.getAllColumns().forEach(function(column) {
+                    allColumnIds.push(column.getId());
+                });
+                params.columnApi.autoSizeColumns(allColumnIds, false);
+            }
+            """)
+
+            gb.configure_grid_options(
+                enableRangeSelection=True,   # permite seleccionar un rango de celdas (como en Excel)
+                enableCellTextSelection=True,  # permite selección de texto dentro da celda tamén
+                clipboardDelimiter="\t",     # para que ao pegar en Excel/Sheets respecte columnas
+            )
+
+            AgGrid(
+                df_tabla1,
+                gridOptions=grid_options,
+                height=1000,
+                allow_unsafe_jscode=True,
+                theme="streamlit",
+                enable_enterprise_modules=False,  # deixa en False, non fai falta
+                fit_columns_on_grid_load=False,
+            )
+
+
+            
+            # st.dataframe(
+            #     tabela_estilizada, 
+            #     height=800,
+            #     use_container_width=True,
+            #     hide_index=True, 
+            #     column_config={
+            #         "fecha_concesion": st.column_config.DatetimeColumn("Data", format="DD/MM/YYYY"),
+            #         "url_persona": st.column_config.LinkColumn(
+            #             "ID Persoa",
+            #             help="Fai clic para ver as concesións desta persoa/entidade",
+            #             display_text=r"https://www\.pap\.hacienda\.gob\.es/bdnstrans/GE/es/concesiones/consulta/(.*)"
+            #         ),
+            #         "beneficiario": "Beneficiario",
+            #         "importe": "Importe",
+            #         "concedente": "Concedente",
+            #         "url_convocatoria": st.column_config.LinkColumn(
+            #             "Nº Convocatoria",
+            #             help="Fai clic para abrir a convocatoria na BDNS",
+            #             display_text=r"https://www\.pap\.hacienda\.gob\.es/bdnstrans/GE/es/convocatorias/(.*)"
+            #         ),
+            #         "convocatoria": st.column_config.TextColumn(
+            #             "Convocatoria",
+            #             help="Descrición da convocatoria da subvención",
+            #             width="large"
+            #         ),
+            #         "bases_reguladoras": st.column_config.LinkColumn(
+            #             "Bases Reguladoras",
+            #             help="Ligazón ás bases reguladoras no boletín correspondente",
+            #             display_text="Ver Bases"
+            #         )
+            #     }
+            # )
 
             # TÁBOA 2: RESUMO POR BENEFICIARIO
             st.subheader("👥 Resumo por Beneficiario")
