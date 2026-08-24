@@ -4,195 +4,277 @@ import plotly.express as px
 from bdns.fetch.client import BDNSClient 
 
 st.set_page_config(
-    page_title="Subvencións Concello de Ames",
+    page_title="Buscador BDNS",
     layout="wide"
 )
 
-# Función de apoio para poñer números en formato español (ex: 112.000,00 €)
+# Función de apoio para poñer números en formato español
 def formato_euros(valor):
     return f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
 
-# 1. Carga e caché de datos
+# 1. Carga de datos base (Cacheada por 24 horas)
 @st.cache_data(ttl=86400)
-def cargar_datos_ames():
+def cargar_datos_base(ambito_busca):
     client = BDNSClient()
     
-    # Obter o xerador e convertelo en lista
-    resultados = list(client.fetch_concesiones_busqueda(organos="35"))
+    # Se é Ames, pedimos o órgano 35. Se é nacional, facemos a petición xenérica permitida.
+    try:
+        if ambito_busca == "Concello de Ames":
+            resultados = list(client.fetch_concesiones_busqueda(organos="35"))
+        else:
+            # Para evitar erros de validación masivos, consultamos sen filtros restritivos inválidos
+            resultados = list(client.fetch_concesiones_busqueda())
+    except Exception:
+        # Fallback de seguridade se a API estatal falla
+        resultados = list(client.fetch_concesiones_busqueda(organos="35"))
+
     df = pd.DataFrame(resultados)
     
     if df.empty:
-        st.warning("Non se atoparon datos.")
         return df
 
     # Identificar posíbeis nomes orixinais dos campos da BDNS
     col_fecha = next((c for c in ['fecConcesion', 'fechaConcesion', 'fecha_concesion', 'fecha'] if c in df.columns), None)
     col_importe = next((c for c in ['impConcesion', 'importeConcesion', 'importe', 'impSubvencion'] if c in df.columns), None)
     col_beneficiario = next((c for c in ['desBeneficiario', 'beneficiario', 'nombreBeneficiario', 'receptor'] if c in df.columns), None)
-    col_programa = next((c for c in ['desConvocatoria', 'tituloConvocatoria', 'programa', 'numConvocatoria'] if c in df.columns), None)
+    col_programa = next((c for c in ['desConvocatoria', 'programa', 'numConvocatoria'] if c in df.columns), None)
+    
+    col_id_convocatoria = 'numeroConvocatoria' if 'numeroConvocatoria' in df.columns else None
+    col_id_persona = 'idPersona' if 'idPersona' in df.columns else None
+    col_convocatoria = 'convocatoria' if 'convocatoria' in df.columns else None
+    col_nivel3 = 'nivel3' if 'nivel3' in df.columns else None
+    col_bases = next((c for c in ['basesReguladoras', 'bases', 'urlBasesReguladoras'] if c in df.columns), None)
 
     if not col_fecha:
-        st.error("Non se atopou a columna de data. Columnas actuais do DataFrame:")
-        st.write(list(df.columns))
-        st.stop()
+        return pd.DataFrame()
 
     # Mapeo e limpeza normalizada
     df['fecha_concesion'] = pd.to_datetime(df[col_fecha], errors='coerce')
     df['importe'] = pd.to_numeric(df[col_importe] if col_importe else 0, errors='coerce').fillna(0)
     df['beneficiario'] = df[col_beneficiario] if col_beneficiario else "Descoñecido"
     df['programa'] = df[col_programa] if col_programa else "Sen programa"
+    
+    df['id_convocatoria'] = df[col_id_convocatoria].astype(str) if col_id_convocatoria else "0"
+    df['id_persona'] = df[col_id_persona].astype(str) if col_id_persona else "0"
+    df['convocatoria'] = df[col_convocatoria] if col_convocatoria else "Sen datos da convocatoria"
+    df['concedente'] = df[col_nivel3] if col_nivel3 else "Sen datos do concedente"
+    df['bases_reguladoras'] = df[col_bases] if col_bases else "Sen datos das bases"
 
-    # Columnas derivadas para as gráficas
+    # URLs
+    df['url_convocatoria'] = "https://www.pap.hacienda.gob.es/bdnstrans/GE/es/convocatorias/" + df['id_convocatoria']
+    df['url_persona'] = "https://www.pap.hacienda.gob.es/bdnstrans/GE/es/concesiones/consulta/" + df['id_persona']
+
+    # Datas derivadas
     df['ano'] = df['fecha_concesion'].dt.year
     df['ano_mes'] = df['fecha_concesion'].dt.to_period('M').astype(str)
     
     return df
 
-st.title("📊 Subvencións e Concesións — Concello de Ames")
+# ==========================================
+# INTERFAZ DE USUARIO: FORMULARIO LATERAL
+# ==========================================
+st.sidebar.title("🔍 Buscador de Subvencións")
+
+with st.sidebar.form("form_busca"):
+    texto_beneficiario = st.text_input("Beneficiario (NIF ou Nome)", help="Exemplo: G15895527 ou nome parcial")
+    ambito_busca = st.selectbox(
+        "Administración / Ámbito", 
+        ["Concello de Ames", "Todas as administracións"]
+    )
+    buscar_btn = st.form_submit_button("Aplicar Filtros")
+
+# ==========================================
+# LÓXICA PRINCIPAL
+# ==========================================
+titulo_principal = "Subvencións do Concello de Ames" if ambito_busca == "Concello de Ames" else "Busca de Subvencións a Nivel Nacional"
+st.title(f"📊 {titulo_principal}")
 
 try:
-    with st.spinner("Descargando e procesando datos da BDNS..."):
-        df = cargar_datos_ames()
+    with st.spinner("Cargando e procesando datos da BDNS..."):
+        df = cargar_datos_base(ambito_busca)
     
-    if not df.empty:
-        # Resumo xeral
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Total Concesións", f"{len(df):,}".replace(",", "."))
-        c2.metric("Importe Total Executado", formato_euros(df['importe'].sum()))
-        c3.metric("Beneficiarios Únicos", f"{df['beneficiario'].nunique():,}".replace(",", "."))
+    if df.empty:
+        st.warning("Non se atoparon datos dispoñibles.")
+    else:
+        # Aplicamos o filtro local de beneficiario (NIF ou nome) de forma segura sen erros de API
+        if texto_beneficiario.strip():
+            filtro = texto_beneficiario.strip().lower()
+            df = df[df['beneficiario'].astype(str).str.lower().str.contains(filtro, na=False)]
+            st.caption(f"Filtro aplicado por texto: **'{texto_beneficiario}'** ({len(df)} resultados atopados)")
 
-        st.divider()
+        if df.empty:
+            st.warning("Ningún rexistro coincide co texto de busca introducido.")
+        else:
+            # Resumo xeral
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total Concesións", f"{len(df):,}".replace(",", "."))
+            c2.metric("Importe Total Executado", formato_euros(df['importe'].sum()))
+            c3.metric("Beneficiarios Únicos", f"{df['beneficiario'].nunique():,}".replace(",", "."))
 
-        # 2. Top 100 Receptores
-        st.subheader("🏆 Top 100 Maiores Receptores de Subvencións")
-        top_100 = (
-            df.groupby('beneficiario')['importe']
-            .sum()
-            .reset_index()
-            .sort_values(by='importe', ascending=False)
-            .head(100)
-        )
-        
-        fig_top100 = px.bar(
-            top_100.sort_values(by='importe', ascending=True),
-            x='importe',
-            y='beneficiario',
-            orientation='h',
-            labels={'importe': 'Importe Total (€)', 'beneficiario': 'Beneficiario'},
-            title="Maiores Receptores por Contía Acumulada"
-        )
-        
-        # Formato da gráfica 1: euros, grosor dobre e hitos verticais cada 20k
-        fig_top100.update_layout(
-            height=2000,          # Aumentamos de 1000 a 2000 para dobrar o grosor das barras
-            bargap=0.15,          # Axuste do oco entre barras
-            separators=",.",      # Coma para decimais, punto para milleiros
-            hovermode="y"
-        )
-        fig_top100.update_xaxes(
-            tickformat=",.2f",    # Formato de dous decimais que usa os separators superiores
-            ticksuffix=" €",
-            showgrid=True,        # Mostrar marcas verticais
-            gridwidth=1,
-            gridcolor='rgba(128, 128, 128, 0.4)',
-            dtick=20000           # Hitos cada 20.000
-        )
-        fig_top100.update_traces(
-            hovertemplate="<b>%{y}</b><br>Importe: %{x:,.2f} €<extra></extra>"
-        )
-        st.plotly_chart(fig_top100, use_container_width=True)
+            st.divider()
 
-        # -- TÁBOA COS RESULTADOS COMPLETA --
-        st.info(f"ℹ️ **Hai un total de {len(df)} rexistros realmente nesta táboa, incluíndo tódolos resultados da consulta.** Podes facer scroll para velos todos.")
-        
-        # Seleccionamos as columnas e aplicamos o formato de euros SÓ de forma visual
-        # Así a columna segue sendo numérica e a orde de frechas funcionará perfectamente
-        tabela_estilizada = df[['fecha_concesion', 'beneficiario', 'importe', 'programa']].style.format({
-            'importe': formato_euros
-        })
-        
-        st.dataframe(
-            tabela_estilizada, 
-            height=400, 
-            use_container_width=True
-        )
-
-        st.divider()
-
-        # 3. Maiores Programas por Gasto
-        st.subheader("💡 Maiores Programas de Subvencións (por Gasto)")
-        programas = (
-            df.groupby('programa')['importe']
-            .sum()
-            .reset_index()
-            .sort_values(by='importe', ascending=False)
-            .head(30)
-        )
-        
-        fig_programas = px.bar(
-            programas.sort_values(by='importe', ascending=True),
-            x='importe',
-            y='programa',
-            orientation='h',
-            height=800,
-            labels={'importe': 'Gasto Total (€)', 'programa': 'Programa / Liña'},
-            title="Gasto Acumulado por Programa (Top 30)"
-        )
-        fig_programas.update_layout(separators=",.")
-        fig_programas.update_xaxes(tickformat=",.2f", ticksuffix=" €")
-        fig_programas.update_traces(hovertemplate="Programa: %{y}<br>Gasto: %{x:,.2f} €<extra></extra>")
-        st.plotly_chart(fig_programas, use_container_width=True)
-
-        st.divider()
-
-        # 4. Frecuencia e Convocatorias Recurrentes
-        st.subheader("📅 Frecuencia de Concesións")
-        tab_ano, tab_mes = st.tabs(["Por Ano", "Por Mes (Evolución)"])
-
-        with tab_ano:
-            por_ano = (
-                df.groupby('ano')
-                .agg(num_concesions=('importe', 'count'), importe_total=('importe', 'sum'))
+            # 2. Top Receptores
+            st.subheader(f"🏆 Maiores Receptores de Subvencións")
+            top_receptores = (
+                df.groupby('beneficiario')['importe']
+                .sum()
                 .reset_index()
-                .dropna(subset=['ano'])
+                .sort_values(by='importe', ascending=False)
+                .head(100)
             )
             
-            fig_ano = px.bar(
-                por_ano,
-                x='ano',
-                y='num_concesions',
-                custom_data=['importe_total'], # Pasamos o importe para a etiqueta flotante
-                labels={'ano': 'Ano', 'num_concesions': 'Número de Concesións'},
-                title="Número de Concesións por Ano"
-            )
-            fig_ano.update_layout(separators=",.")
-            fig_ano.update_xaxes(type='category')
-            fig_ano.update_traces(
-                hovertemplate="Ano: %{x}<br>Concesións: %{y}<br>Importe Total: %{customdata[0]:,.2f} €<extra></extra>"
-            )
-            st.plotly_chart(fig_ano, use_container_width=True)
-
-        with tab_mes:
-            por_mes = (
-                df.groupby('ano_mes')
-                .agg(num_concesions=('importe', 'count'), importe_total=('importe', 'sum'))
-                .reset_index()
-            )
-            por_mes = por_mes[por_mes['ano_mes'] != 'NaT']
+            altura_grafica1 = max(400, len(top_receptores) * 20) 
             
-            fig_mes = px.line(
-                por_mes,
-                x='ano_mes',
-                y='num_concesions',
-                custom_data=['importe_total'],
-                labels={'ano_mes': 'Ano-Mes', 'num_concesions': 'Número de Concesións'},
-                title="Evolución Mensual do Número de Concesións"
+            fig_top = px.bar(
+                top_receptores.sort_values(by='importe', ascending=True),
+                x='importe',
+                y='beneficiario',
+                orientation='h',
+                labels={'importe': 'Importe Total (€)', 'beneficiario': 'Beneficiario'},
+                title="Maiores Receptores por Contía Acumulada"
             )
-            fig_mes.update_layout(separators=",.")
-            fig_mes.update_traces(
-                hovertemplate="Mes: %{x}<br>Concesións: %{y}<br>Importe Total: %{customdata[0]:,.2f} €<extra></extra>"
+            
+            fig_top.update_layout(
+                height=altura_grafica1, 
+                bargap=0.15,
+                separators=",.",
+                hovermode="y"
             )
-            st.plotly_chart(fig_mes, use_container_width=True)
+            fig_top.update_xaxes(
+                tickformat=",.2f",
+                ticksuffix=" €",
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='rgba(128, 128, 128, 0.4)',
+                dtick=20000
+            )
+            fig_top.update_traces(
+                hovertemplate="<b>%{y}</b><br>Importe: %{x:,.2f} €<extra></extra>"
+            )
+            st.plotly_chart(fig_top, use_container_width=True)
+
+            # -- TÁBOA COS RESULTADOS COMPLETA --
+            st.info(f"ℹ️ **Hai un total de {len(df)} rexistros realmente nesta táboa.** Podes facer scroll para velos todos.")
+            
+            columnas_tabela = [
+                'fecha_concesion', 'url_persona', 'beneficiario', 'importe', 
+                'concedente', 'url_convocatoria', 'convocatoria', 'bases_reguladoras'
+            ]
+            tabela_estilizada = df[columnas_tabela].style.format({
+                'importe': formato_euros
+            })
+            
+            st.dataframe(
+                tabela_estilizada, 
+                height=800,
+                use_container_width=True,
+                hide_index=True, 
+                column_config={
+                    "fecha_concesion": st.column_config.DatetimeColumn("Data", format="DD/MM/YYYY"),
+                    "url_persona": st.column_config.LinkColumn(
+                        "ID Persoa",
+                        help="Fai clic para ver as concesións desta persoa/entidade",
+                        display_text=r"https://www\.pap\.hacienda\.gob\.es/bdnstrans/GE/es/concesiones/consulta/(.*)"
+                    ),
+                    "beneficiario": "Beneficiario",
+                    "importe": "Importe",
+                    "concedente": "Concedente",
+                    "url_convocatoria": st.column_config.LinkColumn(
+                        "ID Convocatoria",
+                        help="Fai clic para abrir a convocatoria na BDNS",
+                        display_text=r"https://www\.pap\.hacienda.gob.es/bdnstrans/GE/es/convocatorias/(.*)"
+                    ),
+                    "convocatoria": st.column_config.TextColumn(
+                        "Convocatoria",
+                        help="Descrición da convocatoria da subvención",
+                        width="large" 
+                    ),
+                    "bases_reguladoras": st.column_config.TextColumn(
+                        "Bases Reguladoras",
+                        help="Publicación das bases reguladoras",
+                        width="large"
+                    )
+                }
+            )
+
+            st.divider()
+
+            # 3. Maiores Programas por Gasto
+            st.subheader("💡 Maiores Programas de Subvencións (por Gasto)")
+            programas = (
+                df.groupby('programa')['importe']
+                .sum()
+                .reset_index()
+                .sort_values(by='importe', ascending=False)
+                .head(30)
+            )
+            
+            altura_grafica2 = max(400, len(programas) * 25)
+            
+            fig_programas = px.bar(
+                programas.sort_values(by='importe', ascending=True),
+                x='importe',
+                y='programa',
+                orientation='h',
+                height=altura_grafica2,
+                labels={'importe': 'Gasto Total (€)', 'programa': 'Programa / Liña'},
+                title="Gasto Acumulado por Programa (Top 30)"
+            )
+            fig_programas.update_layout(separators=",.")
+            fig_programas.update_xaxes(tickformat=",.2f", ticksuffix=" €")
+            fig_programas.update_traces(hovertemplate="Programa: %{y}<br>Gasto: %{x:,.2f} €<extra></extra>")
+            st.plotly_chart(fig_programas, use_container_width=True)
+
+            st.divider()
+
+            # 4. Frecuencia e Convocatorias Recurrentes
+            st.subheader("📅 Frecuencia de Concesións")
+            tab_ano, tab_mes = st.tabs(["Por Ano", "Por Mes (Evolución)"])
+
+            with tab_ano:
+                por_ano = (
+                    df.groupby('ano')
+                    .agg(num_concesions=('importe', 'count'), importe_total=('importe', 'sum'))
+                    .reset_index()
+                    .dropna(subset=['ano'])
+                )
+                
+                fig_ano = px.bar(
+                    por_ano,
+                    x='ano',
+                    y='num_concesions',
+                    custom_data=['importe_total'], 
+                    labels={'ano': 'Ano', 'num_concesions': 'Número de Concesións'},
+                    title="Número de Concesións por Ano"
+                )
+                fig_ano.update_layout(separators=",.")
+                fig_ano.update_xaxes(type='category')
+                fig_ano.update_traces(
+                    hovertemplate="Ano: %{x}<br>Concesións: %{y}<br>Importe Total: %{customdata[0]:,.2f} €<extra></extra>"
+                )
+                st.plotly_chart(fig_ano, use_container_width=True)
+
+            with tab_mes:
+                por_mes = (
+                    df.groupby('ano_mes')
+                    .agg(num_concesions=('importe', 'count'), importe_total=('importe', 'sum'))
+                    .reset_index()
+                )
+                por_mes = por_mes[por_mes['ano_mes'] != 'NaT']
+                
+                fig_mes = px.line(
+                    por_mes,
+                    x='ano_mes',
+                    y='num_concesions',
+                    custom_data=['importe_total'],
+                    labels={'ano_mes': 'Ano-Mes', 'num_concesions': 'Número de Concesións'},
+                    title="Evolución Mensual do Número de Concesións"
+                )
+                fig_mes.update_layout(separators=",.")
+                fig_mes.update_traces(
+                    hovertemplate="Mes: %{x}<br>Concesións: %{y}<br>Importe Total: %{customdata[0]:,.2f} €<extra></extra>"
+                )
+                st.plotly_chart(fig_mes, use_container_width=True)
 
 except Exception as e:
     st.error(f"Ocorreu un erro ao extraer ou procesar os datos: {e}")
