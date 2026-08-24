@@ -14,16 +14,28 @@ def formato_euros(valor):
 
 # 1. Carga de datos base (Cacheada por 24 horas)
 @st.cache_data(ttl=86400)
-def cargar_datos_base(ambito_busca):
+def cargar_datos_base(ambito_busca, texto_beneficiario):
     client = BDNSClient()
     
-    try:
-        if ambito_busca == "Concello de Ames":
-            resultados = list(client.fetch_concesiones_busqueda(organos="35"))
+    parametros = {}
+    
+    if ambito_busca == "Concello de Ames":
+        parametros["organos"] = "35"
+        
+    termino = texto_beneficiario.strip() if texto_beneficiario else ""
+    if termino:
+        if len(termino) >= 3 and termino[0].isalpha():
+            parametros["nifCif"] = termino
         else:
-            resultados = list(client.fetch_concesiones_busqueda())
+            parametros["beneficiario"] = termino
+
+    try:
+        resultados = list(client.fetch_concesiones_busqueda(**parametros))
     except Exception:
-        resultados = list(client.fetch_concesiones_busqueda(organos="35"))
+        try:
+            resultados = list(client.fetch_concesiones_busqueda(organos="35" if ambito_busca == "Concello de Ames" else None))
+        except Exception:
+            resultados = []
 
     df = pd.DataFrame(resultados)
     
@@ -35,7 +47,7 @@ def cargar_datos_base(ambito_busca):
     col_beneficiario = next((c for c in ['desBeneficiario', 'beneficiario', 'nombreBeneficiario', 'receptor'] if c in df.columns), None)
     col_programa = next((c for c in ['desConvocatoria', 'programa', 'numConvocatoria'] if c in df.columns), None)
     
-    col_id_convocatoria = 'numeroConvocatoria' if 'numeroConvocatoria' in df.columns else None
+    col_numero_convocatoria = next((c for c in ['numeroConvocatoria', 'idConvocatoria'] if c in df.columns), None)
     col_id_persona = 'idPersona' if 'idPersona' in df.columns else None
     col_convocatoria = 'convocatoria' if 'convocatoria' in df.columns else None
     col_nivel3 = 'nivel3' if 'nivel3' in df.columns else None
@@ -49,13 +61,13 @@ def cargar_datos_base(ambito_busca):
     df['beneficiario'] = df[col_beneficiario] if col_beneficiario else "Descoñecido"
     df['programa'] = df[col_programa] if col_programa else "Sen programa"
     
-    df['id_convocatoria'] = df[col_id_convocatoria].astype(str) if col_id_convocatoria else "0"
+    df['numero_convocatoria'] = df[col_numero_convocatoria].astype(str) if col_numero_convocatoria else "0"
     df['id_persona'] = df[col_id_persona].astype(str) if col_id_persona else "0"
     df['convocatoria'] = df[col_convocatoria] if col_convocatoria else "Sen datos da convocatoria"
     df['concedente'] = df[col_nivel3] if col_nivel3 else "Sen datos do concedente"
     df['bases_reguladoras'] = df[col_bases] if col_bases else "Sen datos das bases"
 
-    df['url_convocatoria'] = "https://www.pap.hacienda.gob.es/bdnstrans/GE/es/convocatorias/" + df['id_convocatoria']
+    df['url_convocatoria'] = "https://www.pap.hacienda.gob.es/bdnstrans/GE/es/convocatorias/" + df['numero_convocatoria']
     df['url_persona'] = "https://www.pap.hacienda.gob.es/bdnstrans/GE/es/concesiones/consulta/" + df['id_persona']
 
     df['ano'] = df['fecha_concesion'].dt.year
@@ -69,12 +81,20 @@ def cargar_datos_base(ambito_busca):
 st.sidebar.title("🔍 Buscador de Subvencións")
 
 with st.sidebar.form("form_busca"):
-    texto_beneficiario = st.text_input("Beneficiario (NIF ou Nome)", help="Exemplo: G15895527 ou nome parcial")
+    texto_beneficiario = st.text_input("Beneficiario (NIF ou Nome)", help="Exemplo: G70370713 ou nome parcial")
     ambito_busca = st.selectbox(
         "Administración / Ámbito", 
         ["Concello de Ames", "Todas as administracións"]
     )
     buscar_btn = st.form_submit_button("Aplicar Filtros")
+
+# ==========================================
+# VALIDACIÓN ESTRICTA (BLOQUEO)
+# ==========================================
+if ambito_busca == "Todas as administracións" and not texto_beneficiario.strip():
+    st.title("📊 Buscador de Subvencións a Nivel Nacional")
+    st.error("🛑 **NON ESTÁ PERMITIDO:** Se seleccionas 'Todas as administracións', **é obrigatorio** introducir un NIF ou nome no buscador lateral para evitar descargas masivas.")
+    st.stop()
 
 # ==========================================
 # LÓXICA PRINCIPAL
@@ -84,15 +104,16 @@ st.title(f"📊 {titulo_principal}")
 
 try:
     with st.spinner("Cargando e procesando datos da BDNS..."):
-        df = cargar_datos_base(ambito_busca)
+        df = cargar_datos_base(ambito_busca, texto_beneficiario)
     
     if df.empty:
-        st.warning("Non se atoparon datos dispoñibles.")
+        st.warning("Non se atoparon datos dispoñibles con eses criterios.")
     else:
         if texto_beneficiario.strip():
             filtro = texto_beneficiario.strip().lower()
-            df = df[df['beneficiario'].astype(str).str.lower().str.contains(filtro, na=False)]
-            st.caption(f"Filtro aplicado por texto: **'{texto_beneficiario}'** ({len(df)} resultados atopados)")
+            df_filtrado = df[df['beneficiario'].astype(str).str.lower().str.contains(filtro, na=False)]
+            if not df_filtrado.empty:
+                df = df_filtrado
 
         if df.empty:
             st.warning("Ningún rexistro coincide co texto de busca introducido.")
@@ -172,7 +193,7 @@ try:
                     "importe": "Importe",
                     "concedente": "Concedente",
                     "url_convocatoria": st.column_config.LinkColumn(
-                        "ID Convocatoria",
+                        "Nº Convocatoria",
                         help="Fai clic para abrir a convocatoria na BDNS",
                         display_text=r"https://www\.pap\.hacienda\.gob\.es/bdnstrans/GE/es/convocatorias/(.*)"
                     ),
