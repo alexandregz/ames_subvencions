@@ -81,7 +81,7 @@ def cargar_datos_base(ambito_busca, texto_beneficiario):
 st.sidebar.title("🔍 Buscador de Subvencións")
 
 with st.sidebar.form("form_busca"):
-    texto_beneficiario = st.text_input("Beneficiario (NIF ou Nome)", help="Exemplo: G70370713 ou nome parcial")
+    texto_beneficiario = st.text_input("NIF Beneficiario NIF", help="Exemplo: G70370713")
     ambito_busca = st.selectbox(
         "Administración / Ámbito", 
         ["Concello de Ames", "Todas as administracións"]
