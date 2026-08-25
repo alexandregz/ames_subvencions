@@ -54,7 +54,7 @@ def arranxar_url(url):
 # DEFINICIÓN E DEDUCION DE ÁREAS
 # ==========================================
 REGLAS_AREAS = [
-    (r"empresas|promoción del comercio|escaparates|hostelería|audiovisual|decoración de navidad|concurso de premios", "Comercio"),
+    (r"empresariales|comercio local|empresas|promoción económica|promoción del comercio|escaparates|hostelería|audiovisual|decoración de navidad|concurso de premios", "Comercio"),
     (r"educativos|educación", "Educación"),
     (r"literario|culturales", "Cultura"),
     (r"festejos|fiestas|baila con ames|canta con ames", "Festas"),
