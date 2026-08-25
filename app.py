@@ -53,11 +53,11 @@ def arranxar_url(url):
 # DEFINICIÓN E DEDUCION DE ÁREAS
 # ==========================================
 REGLAS_AREAS = [
-    (r"empresas|promoción del comercio|escaparates|hostelería|audiovisual|decoración de navidad|concurso de premios|promoción económica", "Comercio"),
+    (r"empresas|promoción del comercio|escaparates|hostelería|audiovisual|decoración de navidad|concurso de premios", "Comercio"),
     (r"educativos|educación", "Educación"),
     (r"literario|culturales", "Cultura"),
     (r"festejos|fiestas|baila con ames|canta con ames", "Festas"),
-    (r"deportivas|deporte|clubs|deportistas", "Deporte"),
+    (r"deportivas|deporte|clubs|deportistas|bertamiráns fc|milladoiro sd|milladorio sd", "Deporte"),
     (r"protección civil", "Protección Civil"),
     (r"nominativa", "Nominativa"),
     (r"servicios sociales|inclusión|familias numerosas", "Servizos Sociais"),
@@ -171,7 +171,7 @@ with st.sidebar.form("form_busca"):
 
     area_seleccionada = st.selectbox(
         "Área da Convocatoria",
-        ["Todas as áreas"] + LISTA_AREAS_ORDENADAS
+        ["Tódalas áreas"] + LISTA_AREAS_ORDENADAS
     )
     
     st.markdown("---")
@@ -197,6 +197,9 @@ if ambito_busca == "Todas as administracións" and not (nif_beneficiario.strip()
 titulo_principal = "Subvencións do Concello de Ames" if ambito_busca == "Concello de Ames" else "Busca de Subvencións a Nivel Nacional"
 st.title(f"📊 {titulo_principal}")
 
+if area_seleccionada != "Tódalas áreas":
+    st.markdown(f"### 🏷️ Área seleccionada: **{area_seleccionada}**")
+
 try:
     with st.spinner("Cargando e procesando datos da BDNS..."):
         df = cargar_datos_base(ambito_busca, nif_beneficiario, numero_convocatoria)
@@ -217,7 +220,7 @@ try:
                 df = df_conv_check
 
         # Filtro por Área
-        if not df.empty and area_seleccionada != "Todas as áreas":
+        if not df.empty and area_seleccionada != "Tódalas áreas":
             if area_seleccionada == "Sen clasificar":
                 df = df[df['area'] == ""]
             else:
@@ -654,84 +657,97 @@ try:
             st.divider()
 
             # ==========================================
-            # ANÁLISE VISUAL POR ÁREA (50% / 50%)
+            # ANÁLISE VISUAL POR ÁREA (VERTICAMENTE)
             # ==========================================
             st.subheader("📌 Análise de Subvencións por Área")
 
-            resumo_areas = (
-                df.groupby('area')
-                .agg(
-                    num_convocatorias=('numero_convocatoria', 'nunique'),
-                    importe_total=('importe', 'sum')
+            filas_apiladas = []
+            for area_val in df['area'].unique():
+                area_nome = area_val if area_val != "" else "Sen clasificar"
+                df_area_item = df[df['area'] == area_val]
+                total_area_item = df_area_item['importe'].sum()
+
+                if total_area_item <= 0:
+                    continue
+
+                benef_area = (
+                    df_area_item.groupby('beneficiario')['importe']
+                    .sum()
+                    .reset_index()
+                    .sort_values(by='importe', ascending=False)
                 )
-                .reset_index()
-            )
-            resumo_areas['area'] = resumo_areas['area'].replace("", "Sen clasificar")
 
-            col_area1, col_area2 = st.columns(2)
+                top5 = benef_area.head(5).copy()
+                resto = benef_area.iloc[5:]
 
-            with col_area1:
-                fig_area_num = px.bar(
-                    resumo_areas.sort_values(by='num_convocatorias', ascending=True),
-                    x='num_convocatorias',
+                if not resto.empty:
+                    resto_sum = resto['importe'].sum()
+                    row_outros = pd.DataFrame([{'beneficiario': 'Outros/as', 'importe': resto_sum}])
+                    top5 = pd.concat([top5, row_outros], ignore_index=True)
+
+                top5['area'] = area_nome
+                top5['porcentaxe_area'] = (top5['importe'] / total_area_item) * 100
+                filas_apiladas.append(top5)
+
+            if filas_apiladas:
+                df_apilado = pd.concat(filas_apiladas, ignore_index=True)
+
+                totais_area_ordem = (
+                    df_apilado.groupby('area')['importe']
+                    .sum()
+                    .reset_index()
+                    .sort_values(by='importe', ascending=True)
+                )
+                ordem_areas = totais_area_ordem['area'].tolist()
+                df_apilado['area_cat'] = pd.Categorical(df_apilado['area'], categories=ordem_areas, ordered=True)
+                df_apilado = df_apilado.sort_values(by=['area_cat', 'importe'], ascending=[True, False])
+
+                fig_apilada = px.bar(
+                    df_apilado,
+                    x='importe',
                     y='area',
+                    color='beneficiario',
                     orientation='h',
-                    labels={'num_convocatorias': 'Nº de Convocatorias', 'area': 'Área'},
-                    title="Nº de Convocatorias por Área"
+                    title="Top 5 Beneficiarios por Área (€)",
+                    labels={'importe': 'Importe Total (€)', 'area': 'Área', 'beneficiario': 'Beneficiario'},
+                    custom_data=['beneficiario', 'porcentaxe_area']
                 )
-                fig_area_num.update_layout(separators=",.")
-                fig_area_num.update_traces(
-                    hovertemplate="<b>Área: %{y}</b><br>Convocatorias: %{x}<extra></extra>"
-                )
-                st.plotly_chart(fig_area_num, use_container_width=True)
 
-            with col_area2:
-                fig_area_imp = px.bar(
-                    resumo_areas.sort_values(by='importe_total', ascending=True),
-                    x='importe_total',
-                    y='area',
-                    orientation='h',
-                    labels={'importe_total': 'Importe Total (€)', 'area': 'Área'},
-                    title="Importe Concedido por Área (€)"
+                fig_apilada.update_layout(
+                    barmode='stack',
+                    separators=",.",
+                    height=max(450, len(ordem_areas) * 45),
+                    showlegend=False
                 )
-                fig_area_imp.update_layout(separators=",.")
-                fig_area_imp.update_xaxes(tickformat=",.2f", ticksuffix=" €")
-                fig_area_imp.update_traces(
-                    hovertemplate="<b>Área: %{y}</b><br>Importe Total: %{x:,.2f} €<extra></extra>"
+                fig_apilada.update_xaxes(tickformat=",.2f", ticksuffix=" €")
+                fig_apilada.update_traces(
+                    hovertemplate="<b>Área: %{y}</b><br>Beneficiario: %{customdata[0]}<br>Importe: %{x:,.2f} €<br>% da Área: %{customdata[1]:,.2f} %<extra></extra>"
                 )
-                st.plotly_chart(fig_area_imp, use_container_width=True)
+                st.plotly_chart(fig_apilada, use_container_width=True)
+
+                df_tabla_area = df_apilado[['area', 'beneficiario', 'porcentaxe_area']].sort_values(
+                    by=['area', 'porcentaxe_area'], ascending=[True, False]
+                )
+
+                tabla_area_estilizada = df_tabla_area.style.format({
+                    'porcentaxe_area': lambda x: f"{x:,.2f}".replace(".", ",") + " %"
+                })
+
+                altura_tab_area = max(180, min(650, (len(df_tabla_area) + 1) * 35 + 25))
+
+                st.dataframe(
+                    tabla_area_estilizada,
+                    height=altura_tab_area,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "area": "Área",
+                        "beneficiario": "Beneficiario",
+                        "porcentaxe_area": "% do Total"
+                    }
+                )
 
             st.divider()
-
-            # comentado codigo, son todas as subvencións "Sen programa"
-
-            # # Maiores Programas por Gasto
-            # st.subheader("💡 Maiores Programas de Subvencións (por Gasto)")
-            # programas = (
-            #     df.groupby('programa')['importe']
-            #     .sum()
-            #     .reset_index()
-            #     .sort_values(by='importe', ascending=False)
-            #     .head(30)
-            # )
-            
-            # altura_grafica2 = max(400, len(programas) * 25)
-            
-            # fig_programas = px.bar(
-            #     programas.sort_values(by='importe', ascending=True),
-            #     x='importe',
-            #     y='programa',
-            #     orientation='h',
-            #     height=altura_grafica2,
-            #     labels={'importe': 'Gasto Total (€)', 'programa': 'Programa / Liña'},
-            #     title="Gasto Acumulado por Programa (Top 30)"
-            # )
-            # fig_programas.update_layout(separators=",.")
-            # fig_programas.update_xaxes(tickformat=",.2f", ticksuffix=" €")
-            # fig_programas.update_traces(hovertemplate="Programa: %{y}<br>Gasto: %{x:,.2f} €<extra></extra>")
-            # st.plotly_chart(fig_programas, use_container_width=True)
-
-            # st.divider()
 
             # Frecuencia e Convocatorias
             st.subheader("📅 Frecuencia de Concesións (Número)")
