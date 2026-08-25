@@ -686,26 +686,23 @@ try:
                     row_outros = pd.DataFrame([{'beneficiario': 'Outros/as', 'importe': resto_sum}])
                     top5 = pd.concat([top5, row_outros], ignore_index=True)
 
-                # Re-ordear por importe descendente para que 'Outros/as' ocupe a súa posición real segundo o seu tamaño
                 top5 = top5.sort_values(by='importe', ascending=False).reset_index(drop=True)
 
                 top5['area'] = area_nome
                 top5['porcentaxe_area'] = (top5['importe'] / total_area_item) * 100
-                top5['rank'] = top5.index + 1  # 1 (maior), 2, 3...
+                top5['rank'] = top5.index + 1  
                 filas_apiladas.append(top5)
 
             if filas_apiladas:
                 df_apilado = pd.concat(filas_apiladas, ignore_index=True)
 
-                # Mapa de cores: "Outros/as" ten sempre unha cor constante dedicada
                 unique_benefs = [b for b in df_apilado['beneficiario'].unique() if b != 'Outros/as']
                 palette = px.colors.qualitative.Plotly + px.colors.qualitative.Bold + px.colors.qualitative.Dark24
                 color_map = {b: palette[i % len(palette)] for i, b in enumerate(unique_benefs)}
-                color_map['Outros/as'] = '#1d4ed8'  # Cor azul constante para Outros/as
+                color_map['Outros/as'] = '#1d4ed8'  
 
                 df_apilado['color'] = df_apilado['beneficiario'].map(color_map)
 
-                # Orde das áreas por importe total ascendente (para que a maior quede arriba na gráfica horizontal)
                 totais_area_ordem = (
                     df_apilado.groupby('area')['importe']
                     .sum()
@@ -750,7 +747,6 @@ try:
                 fig_apilada.update_xaxes(tickformat=",.2f", ticksuffix=" €")
                 st.plotly_chart(fig_apilada, use_container_width=True)
 
-                # Táboa debaixo da gráfica ordenada por Área e % do Total descendente
                 df_tabla_area = df_apilado[['area', 'beneficiario', 'porcentaxe_area']].sort_values(
                     by=['area', 'porcentaxe_area'], ascending=[True, False]
                 )
@@ -797,6 +793,8 @@ try:
                 )
                 fig_ano.update_layout(separators=",.")
                 fig_ano.update_xaxes(type='category')
+                # Forzar números enteiros no eixo Y
+                fig_ano.update_yaxes(dtick=1, tickformat="d")
                 fig_ano.update_traces(
                     hovertemplate="Ano: %{x}<br>Concesións: %{y}<br>Importe Total: %{customdata[0]:,.2f} €<extra></extra>"
                 )
@@ -819,6 +817,8 @@ try:
                     title="Evolución Mensual do Número de Concesións"
                 )
                 fig_mes.update_layout(separators=",.")
+                # Forzar números enteiros no eixo Y tamén aquí
+                fig_mes.update_yaxes(dtick=1, tickformat="d")
                 fig_mes.update_traces(
                     hovertemplate="Mes: %{x}<br>Concesións: %{y}<br>Importe Total: %{customdata[0]:,.2f} €<extra></extra>"
                 )
