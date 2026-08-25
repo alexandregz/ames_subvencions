@@ -219,7 +219,7 @@ try:
             st.plotly_chart(fig_top, use_container_width=True)
 
             # ==========================================
-            # IMPORTE E CONFIGURACIÓN DO AGGRID PARA MULTILIÑA (SEN PAXINACIÓN)
+            # IMPORTE E CONFIGURACIÓN DO AGGRID (COPIAR/PEGAR HABILITADO)
             # ==========================================
             from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
@@ -259,7 +259,7 @@ try:
             }
             """)
 
-            # TÁBOA 1: RESULTADOS DETALLADOS COMPLETA (MULTILIÑA SEN PAXINACIÓN)
+            # TÁBOA 1: RESULTADOS DETALLADOS COMPLETA
             st.info(f"ℹ️ **Detalle de concesións (Total: {len(df)} rexistros).**")
             
             filtro_local = st.text_input("🔍 Busca rápida na táboa (Beneficiario, Nº Convocatoria, Título da Convocatoria, Concedente ou Data):", key="filtro_local_text")
@@ -290,14 +290,17 @@ try:
             gb1.configure_column("importe", header_name="Importe", type=["numericColumn"], valueFormatter=euro_formatter, width=130)
             gb1.configure_column("concedente", header_name="Concedente", width=200)
             gb1.configure_column("url_convocatoria", header_name="Nº Convoc.", cellRenderer=link_renderer, width=120)
-            
-            # MAGIA DA MULTILIÑA
             gb1.configure_column("convocatoria", header_name="Convocatoria", wrapText=True, autoHeight=True, width=450, cellStyle={"line-height": "1.4", "padding-top": "8px", "padding-bottom": "8px"})
             gb1.configure_column("bases_reguladoras", header_name="Bases reg.", cellRenderer=link_renderer, width=120)
 
+            # PERMISO DE SELECCIÓN E COPIAR DO PORTAPAPEIS (SOLUCIÓN ONLINE)
+            gb1.configure_grid_options(
+                enableRangeSelection=True,
+                enableCellTextSelection=True,
+                clipboardDelimiter='\t',
+            )
+
             grid_options1 = gb1.build()
-            
-            # Altura elástica calculada segundo o número de filas
             altura_t1 = max(180, min(800, len(df_filtrado_t1) * 55 + 60))
 
             AgGrid(
@@ -385,7 +388,7 @@ try:
                 }
             )
 
-            # TÁBOA 4: RESUMO POR CONVOCATORIA (MULTILIÑA SEN PAXINACIÓN)
+            # TÁBOA 4: RESUMO POR CONVOCATORIA (COPIAR/PEGAR HABILITADO)
             st.subheader("📋 Resumo por Convocatoria")
 
             resumo_convocatorias = (
@@ -414,8 +417,14 @@ try:
             gb4.configure_column("importe_total", header_name="Importe Total", type=["numericColumn"], valueFormatter=euro_formatter, width=150)
             gb4.configure_column("bases_reguladoras", header_name="Bases reg.", cellRenderer=link_renderer, width=120)
 
+            # PERMISO DE SELECCIÓN E COPIAR DO PORTAPAPEIS
+            gb4.configure_grid_options(
+                enableRangeSelection=True,
+                enableCellTextSelection=True,
+                clipboardDelimiter='\t',
+            )
+
             grid_options4 = gb4.build()
-            
             altura_t4 = max(180, min(600, len(df_conv_filtrado) * 55 + 60))
 
             AgGrid(
