@@ -530,7 +530,7 @@ try:
                 }
             )
 
-            # TÁBOA 4: RESUMO POR CONVOCATORIA
+            # TÁBOA 4: RESUMO POR CONVOCATORIA (AgGrid con Multilinea)
             st.subheader("📋 Resumo por Convocatoria")
 
             resumo_convocatorias = (
@@ -552,34 +552,85 @@ try:
                 'numero_beneficiarios', 'importe_total', 'bases_reguladoras'
             ]
 
-            resumo_convocatorias = resumo_convocatorias[columnas_resumo_conv].sort_values(by='importe_total', ascending=False)
+            df_conv_filtrado = resumo_convocatorias[columnas_resumo_conv].sort_values(by='importe_total', ascending=False)
 
-            resumo_conv_estilizado = resumo_convocatorias.style.format({
-                'importe_total': formato_euros
-            })
+            gb_conv = GridOptionsBuilder.from_dataframe(df_conv_filtrado)
 
-            st.dataframe(
-                resumo_conv_estilizado,
-                height=400,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "url_convocatoria": st.column_config.LinkColumn(
-                        "Nº Convocatoria",
-                        help="Fai clic para abrir a convocatoria na BDNS",
-                        display_text=r"https://www\.pap\.hacienda\.gob\.es/bdnstrans/GE/es/convocatorias/(.*)"
-                    ),
-                    "convocatoria": st.column_config.TextColumn("Convocatoria", width="large"),
-                    "area": "Área",
-                    "concedente": "Concedente",
-                    "numero_beneficiarios": "Nº Total Beneficiarios",
-                    "importe_total": "Importe Total Concedido",
-                    "bases_reguladoras": st.column_config.LinkColumn(
-                        "Bases Reguladoras",
-                        help="Ligazón ás bases reguladoras",
-                        display_text="Ver Bases"
-                    )
-                }
+            gb_conv.configure_default_column(
+                resizable=True,
+                filter=True,
+                sortable=True,
+            )
+
+            gb_conv.configure_column(
+                "url_convocatoria",
+                header_name="Nº Convocatoria",
+                cellRenderer=link_renderer, maxWidth=120,
+                tooltipField="url_convocatoria",
+            )
+
+            gb_conv.configure_column(
+                "convocatoria",
+                header_name="Convocatoria",
+                wrapText=True,
+                autoHeight=True,
+                cellStyle={"white-space": "normal", "line-height": "1.4"},
+                minWidth=300, flex=2,
+                tooltipField="convocatoria",
+            )
+
+            gb_conv.configure_column(
+                "area",
+                header_name="Área",
+                maxWidth=130,
+            )
+
+            gb_conv.configure_column(
+                "concedente",
+                header_name="Concedente",
+                minWidth=200,
+            )
+
+            gb_conv.configure_column(
+                "numero_beneficiarios",
+                header_name="Nº Total Beneficiarios",
+                type=["numericColumn"],
+                cellStyle={"textAlign": "right"},
+                maxWidth=160,
+            )
+
+            gb_conv.configure_column(
+                "importe_total",
+                header_name="Importe Total Concedido",
+                type=["numericColumn"],
+                valueFormatter=euro_formatter,
+                maxWidth=180,
+                cellStyle={"textAlign": "right"},
+            )
+
+            gb_conv.configure_column(
+                "bases_reguladoras",
+                header_name="Bases reguladoras",
+                cellRenderer=link_renderer,
+                tooltipField="bases_reguladoras",
+            )
+
+            grid_options_conv = gb_conv.build()
+
+            gb_conv.configure_grid_options(
+                enableRangeSelection=True,
+                enableCellTextSelection=True,
+                clipboardDelimiter="\t",
+            )
+
+            AgGrid(
+                df_conv_filtrado,
+                gridOptions=grid_options_conv,
+                height=500,
+                allow_unsafe_jscode=True,
+                theme="streamlit",
+                enable_enterprise_modules=False,
+                fit_columns_on_grid_load=False,
             )
 
             st.divider()
