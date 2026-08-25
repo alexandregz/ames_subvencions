@@ -584,6 +584,56 @@ try:
 
             st.divider()
 
+            # ==========================================
+            # ANÁLISE VISUAL POR ÁREA (50% / 50%)
+            # ==========================================
+            st.subheader("📌 Análise de Subvencións por Área")
+
+            resumo_areas = (
+                df.groupby('area')
+                .agg(
+                    num_convocatorias=('numero_convocatoria', 'nunique'),
+                    importe_total=('importe', 'sum')
+                )
+                .reset_index()
+            )
+            resumo_areas['area'] = resumo_areas['area'].replace("", "Sen clasificar")
+
+            col_area1, col_area2 = st.columns(2)
+
+            with col_area1:
+                fig_area_num = px.bar(
+                    resumo_areas.sort_values(by='num_convocatorias', ascending=True),
+                    x='num_convocatorias',
+                    y='area',
+                    orientation='h',
+                    labels={'num_convocatorias': 'Nº de Convocatorias', 'area': 'Área'},
+                    title="Nº de Convocatorias por Área"
+                )
+                fig_area_num.update_layout(separators=",.")
+                fig_area_num.update_traces(
+                    hovertemplate="<b>Área: %{y}</b><br>Convocatorias: %{x}<extra></extra>"
+                )
+                st.plotly_chart(fig_area_num, use_container_width=True)
+
+            with col_area2:
+                fig_area_imp = px.bar(
+                    resumo_areas.sort_values(by='importe_total', ascending=True),
+                    x='importe_total',
+                    y='area',
+                    orientation='h',
+                    labels={'importe_total': 'Importe Total (€)', 'area': 'Área'},
+                    title="Importe Concedido por Área (€)"
+                )
+                fig_area_imp.update_layout(separators=",.")
+                fig_area_imp.update_xaxes(tickformat=",.2f", ticksuffix=" €")
+                fig_area_imp.update_traces(
+                    hovertemplate="<b>Área: %{y}</b><br>Importe Total: %{x:,.2f} €<extra></extra>"
+                )
+                st.plotly_chart(fig_area_imp, use_container_width=True)
+
+            st.divider()
+
             # Maiores Programas por Gasto
             st.subheader("💡 Maiores Programas de Subvencións (por Gasto)")
             programas = (
