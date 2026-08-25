@@ -219,7 +219,7 @@ try:
             st.plotly_chart(fig_top, use_container_width=True)
 
             # ==========================================
-            # IMPORTE E CONFIGURACIÓN DO AGGRID PARA MULTILIÑA
+            # IMPORTE E CONFIGURACIÓN DO AGGRID PARA MULTILIÑA (SEN PAXINACIÓN)
             # ==========================================
             from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
@@ -259,7 +259,7 @@ try:
             }
             """)
 
-            # TÁBOA 1: RESULTADOS DETALLADOS COMPLETA (PAXINADA E MULTILIÑA)
+            # TÁBOA 1: RESULTADOS DETALLADOS COMPLETA (MULTILIÑA SEN PAXINACIÓN)
             st.info(f"ℹ️ **Detalle de concesións (Total: {len(df)} rexistros).**")
             
             filtro_local = st.text_input("🔍 Busca rápida na táboa (Beneficiario, Nº Convocatoria, Título da Convocatoria, Concedente ou Data):", key="filtro_local_text")
@@ -295,15 +295,15 @@ try:
             gb1.configure_column("convocatoria", header_name="Convocatoria", wrapText=True, autoHeight=True, width=450, cellStyle={"line-height": "1.4", "padding-top": "8px", "padding-bottom": "8px"})
             gb1.configure_column("bases_reguladoras", header_name="Bases reg.", cellRenderer=link_renderer, width=120)
 
-            # PAXINACIÓN ACTIVADA
-            gb1.configure_pagination(paginationAutoPageSize=False, paginationPageSize=15)
-
             grid_options1 = gb1.build()
+            
+            # Altura elástica calculada segundo o número de filas
+            altura_t1 = max(180, min(800, len(df_filtrado_t1) * 55 + 60))
 
             AgGrid(
                 df_filtrado_t1,
                 gridOptions=grid_options1,
-                height=600, 
+                height=altura_t1, 
                 allow_unsafe_jscode=True,
                 theme="streamlit",
                 key="aggrid_tabla_1" 
@@ -385,7 +385,7 @@ try:
                 }
             )
 
-            # TÁBOA 4: RESUMO POR CONVOCATORIA (PAXINADA E MULTILIÑA)
+            # TÁBOA 4: RESUMO POR CONVOCATORIA (MULTILIÑA SEN PAXINACIÓN)
             st.subheader("📋 Resumo por Convocatoria")
 
             resumo_convocatorias = (
@@ -414,15 +414,14 @@ try:
             gb4.configure_column("importe_total", header_name="Importe Total", type=["numericColumn"], valueFormatter=euro_formatter, width=150)
             gb4.configure_column("bases_reguladoras", header_name="Bases reg.", cellRenderer=link_renderer, width=120)
 
-            # PAXINACIÓN ACTIVADA
-            gb4.configure_pagination(paginationAutoPageSize=False, paginationPageSize=10)
-
             grid_options4 = gb4.build()
+            
+            altura_t4 = max(180, min(600, len(df_conv_filtrado) * 55 + 60))
 
             AgGrid(
                 df_conv_filtrado,
                 gridOptions=grid_options4,
-                height=500, 
+                height=altura_t4, 
                 allow_unsafe_jscode=True,
                 theme="streamlit",
                 key="aggrid_tabla_4"
@@ -524,10 +523,7 @@ try:
                 )
                 fig_ano.update_layout(separators=",.")
                 fig_ano.update_xaxes(type='category')
-                
-                # CORRECCIÓN DO ERRO QUE COLAPSABA A GRÁFICA (eliminamos dtick=1 e deixamos tickformat="d")
                 fig_ano.update_yaxes(tickformat="d")
-                
                 fig_ano.update_traces(hovertemplate="Ano: %{x}<br>Concesións: %{y}<br>Importe Total: %{customdata[0]:,.2f} €<extra></extra>")
                 st.plotly_chart(fig_ano, use_container_width=True)
 
@@ -539,10 +535,7 @@ try:
                     labels={'ano_mes': 'Ano-Mes', 'num_concesions': 'Número de Concesións'}, title="Evolución Mensual do Número de Concesións"
                 )
                 fig_mes.update_layout(separators=",.")
-                
-                # CORRECCIÓN DO ERRO (eliminamos dtick=1 e deixamos tickformat="d")
                 fig_mes.update_yaxes(tickformat="d")
-                
                 fig_mes.update_traces(hovertemplate="Mes: %{x}<br>Concesións: %{y}<br>Importe Total: %{customdata[0]:,.2f} €<extra></extra>")
                 st.plotly_chart(fig_mes, use_container_width=True)
 
