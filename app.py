@@ -703,33 +703,35 @@ try:
 
             st.divider()
 
-            # Maiores Programas por Gasto
-            st.subheader("💡 Maiores Programas de Subvencións (por Gasto)")
-            programas = (
-                df.groupby('programa')['importe']
-                .sum()
-                .reset_index()
-                .sort_values(by='importe', ascending=False)
-                .head(30)
-            )
-            
-            altura_grafica2 = max(400, len(programas) * 25)
-            
-            fig_programas = px.bar(
-                programas.sort_values(by='importe', ascending=True),
-                x='importe',
-                y='programa',
-                orientation='h',
-                height=altura_grafica2,
-                labels={'importe': 'Gasto Total (€)', 'programa': 'Programa / Liña'},
-                title="Gasto Acumulado por Programa (Top 30)"
-            )
-            fig_programas.update_layout(separators=",.")
-            fig_programas.update_xaxes(tickformat=",.2f", ticksuffix=" €")
-            fig_programas.update_traces(hovertemplate="Programa: %{y}<br>Gasto: %{x:,.2f} €<extra></extra>")
-            st.plotly_chart(fig_programas, use_container_width=True)
+            # comentado codigo, son todas as subvencións "Sen programa"
 
-            st.divider()
+            # # Maiores Programas por Gasto
+            # st.subheader("💡 Maiores Programas de Subvencións (por Gasto)")
+            # programas = (
+            #     df.groupby('programa')['importe']
+            #     .sum()
+            #     .reset_index()
+            #     .sort_values(by='importe', ascending=False)
+            #     .head(30)
+            # )
+            
+            # altura_grafica2 = max(400, len(programas) * 25)
+            
+            # fig_programas = px.bar(
+            #     programas.sort_values(by='importe', ascending=True),
+            #     x='importe',
+            #     y='programa',
+            #     orientation='h',
+            #     height=altura_grafica2,
+            #     labels={'importe': 'Gasto Total (€)', 'programa': 'Programa / Liña'},
+            #     title="Gasto Acumulado por Programa (Top 30)"
+            # )
+            # fig_programas.update_layout(separators=",.")
+            # fig_programas.update_xaxes(tickformat=",.2f", ticksuffix=" €")
+            # fig_programas.update_traces(hovertemplate="Programa: %{y}<br>Gasto: %{x:,.2f} €<extra></extra>")
+            # st.plotly_chart(fig_programas, use_container_width=True)
+
+            # st.divider()
 
             # Frecuencia e Convocatorias
             st.subheader("📅 Frecuencia de Concesións (Número)")
