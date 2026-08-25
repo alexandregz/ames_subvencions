@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import os
 import re
 import logging
@@ -685,13 +686,26 @@ try:
                     row_outros = pd.DataFrame([{'beneficiario': 'Outros/as', 'importe': resto_sum}])
                     top5 = pd.concat([top5, row_outros], ignore_index=True)
 
+                # Re-ordear por importe descendente para que 'Outros/as' ocupe a súa posición real segundo o seu tamaño
+                top5 = top5.sort_values(by='importe', ascending=False).reset_index(drop=True)
+
                 top5['area'] = area_nome
                 top5['porcentaxe_area'] = (top5['importe'] / total_area_item) * 100
+                top5['rank'] = top5.index + 1  # 1 (maior), 2, 3...
                 filas_apiladas.append(top5)
 
             if filas_apiladas:
                 df_apilado = pd.concat(filas_apiladas, ignore_index=True)
 
+                # Mapa de cores: "Outros/as" ten sempre unha cor constante dedicada
+                unique_benefs = [b for b in df_apilado['beneficiario'].unique() if b != 'Outros/as']
+                palette = px.colors.qualitative.Plotly + px.colors.qualitative.Bold + px.colors.qualitative.Dark24
+                color_map = {b: palette[i % len(palette)] for i, b in enumerate(unique_benefs)}
+                color_map['Outros/as'] = '#1d4ed8'  # Cor azul constante para Outros/as
+
+                df_apilado['color'] = df_apilado['beneficiario'].map(color_map)
+
+                # Orde das áreas por importe total ascendente (para que a maior quede arriba na gráfica horizontal)
                 totais_area_ordem = (
                     df_apilado.groupby('area')['importe']
                     .sum()
@@ -699,32 +713,44 @@ try:
                     .sort_values(by='importe', ascending=True)
                 )
                 ordem_areas = totais_area_ordem['area'].tolist()
-                df_apilado['area_cat'] = pd.Categorical(df_apilado['area'], categories=ordem_areas, ordered=True)
-                df_apilado = df_apilado.sort_values(by=['area_cat', 'importe'], ascending=[True, False])
 
-                fig_apilada = px.bar(
-                    df_apilado,
-                    x='importe',
-                    y='area',
-                    color='beneficiario',
-                    orientation='h',
-                    title="Top 5 Beneficiarios por Área (€)",
-                    labels={'importe': 'Importe Total (€)', 'area': 'Área', 'beneficiario': 'Beneficiario'},
-                    custom_data=['beneficiario', 'porcentaxe_area']
-                )
+                fig_apilada = go.Figure()
+
+                max_rank = int(df_apilado['rank'].max())
+                for r in range(1, max_rank + 1):
+                    df_r = df_apilado[df_apilado['rank'] == r].copy()
+                    if df_r.empty:
+                        continue
+                    
+                    df_r['area_cat'] = pd.Categorical(df_r['area'], categories=ordem_areas, ordered=True)
+                    df_r = df_r.sort_values('area_cat')
+
+                    fig_apilada.add_trace(
+                        go.Bar(
+                            y=df_r['area'],
+                            x=df_r['importe'],
+                            orientation='h',
+                            name=f"Posición {r}",
+                            marker=dict(color=df_r['color']),
+                            customdata=df_r[['beneficiario', 'porcentaxe_area']],
+                            hovertemplate="<b>Área: %{y}</b><br>Beneficiario: %{customdata[0]}<br>Importe: %{x:,.2f} €<br>% da Área: %{customdata[1]:,.2f} %<extra></extra>",
+                            showlegend=False
+                        )
+                    )
 
                 fig_apilada.update_layout(
                     barmode='stack',
+                    title="Top 5 Beneficiarios por Área (€)",
+                    xaxis_title="Importe Total (€)",
+                    yaxis_title="Área",
                     separators=",.",
                     height=max(450, len(ordem_areas) * 45),
                     showlegend=False
                 )
                 fig_apilada.update_xaxes(tickformat=",.2f", ticksuffix=" €")
-                fig_apilada.update_traces(
-                    hovertemplate="<b>Área: %{y}</b><br>Beneficiario: %{customdata[0]}<br>Importe: %{x:,.2f} €<br>% da Área: %{customdata[1]:,.2f} %<extra></extra>"
-                )
                 st.plotly_chart(fig_apilada, use_container_width=True)
 
+                # Táboa debaixo da gráfica ordenada por Área e % do Total descendente
                 df_tabla_area = df_apilado[['area', 'beneficiario', 'porcentaxe_area']].sort_values(
                     by=['area', 'porcentaxe_area'], ascending=[True, False]
                 )
