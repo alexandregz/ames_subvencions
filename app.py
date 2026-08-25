@@ -22,6 +22,10 @@ st.set_page_config(
     layout="wide"
 )
 
+# Inicializar o estado para a busca local se non existe
+if "filtro_local_text" not in st.session_state:
+    st.session_state["filtro_local_text"] = ""
+
 # CSS para forzar o texto multilíña nas celas da táboa
 st.markdown("""
     <style>
@@ -45,28 +49,31 @@ def arranxar_url(url):
         return 'https://' + url_str
     return url_str
 
+# ==========================================
+# DEFINICIÓN E DEDUCION DE ÁREAS
+# ==========================================
+REGLAS_AREAS = [
+    (r"empresas|promoción del comercio|escaparates|hostelería|audiovisual|decoración de navidad|concurso de premios", "Comercio"),
+    (r"educativos|educación", "Educación"),
+    (r"literario|culturales", "Cultura"),
+    (r"festejos|fiestas|baila con ames|canta con ames", "Festas"),
+    (r"deportivas|deporte|clubs|deportistas|bertamiráns fc|milladoiro sd|milladorio sd", "Deporte"),
+    (r"protección civil", "Protección Civil"),
+    (r"nominativa", "Nominativa"),
+    (r"servicios sociales|inclusión|familias numerosas", "Servizos Sociais"),
+    (r"premio lengua|galetiktokers", "Lingua"),
+]
+
+# Áreas únicas ordenadas alfabeticamente + Sen clasificar
+LISTA_AREAS_ORDENADAS = sorted(list(set([area for _, area in REGLAS_AREAS]))) + ["Sen clasificar"]
+
 def deducir_area(texto):
     if not isinstance(texto, str):
         return ""
     txt = texto.lower()
-    if re.search(r"empresas|promoción del comercio|escaparates|hostelería|audiovisual|decoración de navidad|concurso de premios", txt):
-        return "Comercio"
-    if re.search(r"educativos|educación", txt):
-        return "Educación"
-    if re.search(r"literario|culturales", txt):
-        return "Cultura"
-    if re.search(r"festejos|fiestas|baila con ames|canta con ames", txt):
-        return "Festas"
-    if re.search(r"deportivas|deporte|clubs|deportistas", txt):
-        return "Deporte"
-    if re.search(r"protección civil", txt):
-        return "Protección Civil"
-    if re.search(r"nominativa", txt):
-        return "Nominativa"
-    if re.search(r"servicios sociales|inclusión|familias numerosas", txt):
-        return "Servizos Sociais"
-    if re.search(r"premio lengua|galetiktokers", txt):
-        return "Lingua"
+    for patron, area in REGLAS_AREAS:
+        if re.search(patron, txt):
+            return area
     return ""
 
 @st.cache_data(ttl=86400, show_spinner="⏳ Cargando datos base de BDNS...")
@@ -161,6 +168,11 @@ with st.sidebar.form("form_busca"):
         "Administración / Ámbito", 
         ["Concello de Ames", "Todas as administracións"]
     )
+
+    area_seleccionada = st.selectbox(
+        "Área da Convocatoria",
+        ["Todas as áreas"] + LISTA_AREAS_ORDENADAS
+    )
     
     st.markdown("---")
     st.markdown("**Filtro por Importe (€)**")
@@ -172,6 +184,10 @@ with st.sidebar.form("form_busca"):
         importe_max = st.number_input("Máximo", min_value=0.0, value=0.0, step=100.0, help="Deixa en 0.0 para sen límite")
 
     buscar_btn = st.form_submit_button("Aplicar Filtros")
+
+# Resetear o filtro de busca rápida na táboa cando se preme "Aplicar Filtros"
+if buscar_btn:
+    st.session_state["filtro_local_text"] = ""
 
 if ambito_busca == "Todas as administracións" and not (nif_beneficiario.strip() or numero_convocatoria.strip()):
     st.title("📊 Buscador de Subvencións a Nivel Nacional")
@@ -199,6 +215,13 @@ try:
             df_conv_check = df[df['numero_convocatoria'].astype(str) == filtro_conv]
             if not df_conv_check.empty:
                 df = df_conv_check
+
+        # Filtro por Área
+        if not df.empty and area_seleccionada != "Todas as áreas":
+            if area_seleccionada == "Sen clasificar":
+                df = df[df['area'] == ""]
+            else:
+                df = df[df['area'] == area_seleccionada]
 
         if not df.empty:
             if importe_min > 0:
@@ -265,7 +288,7 @@ try:
             
             filtro_local = st.text_input(
                 "🔍 Busca rápida na táboa (Beneficiario, Nº Convocatoria, Título da Convocatoria, Concedente ou Data):", 
-                ""
+                key="filtro_local_text"
             )
             
             df_tabla1 = df.copy()
@@ -288,17 +311,12 @@ try:
                 'fecha_concesion', 'url_persona', 'beneficiario', 'importe', 
                 'concedente', 'url_convocatoria', 'convocatoria', 'bases_reguladoras'
             ]
-            
-            tabela_estilizada = df_tabla1[columnas_tabela].style.format({
-                'importe': formato_euros
-            })
 
             # ====================================
             # AgGrid (para multilinea)
             # ====================================
             from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
-            # --- Renderer JS para converter URL en link clicable ---
             link_renderer = JsCode("""
             class UrlCellRenderer {
                 init(params) {
@@ -314,7 +332,6 @@ try:
             }
             """)
 
-            # --- Formateador de euros --
             euro_formatter = JsCode("""
             function(params) {
                 if (params.value == null) { return ''; }
@@ -329,14 +346,11 @@ try:
 
             gb = GridOptionsBuilder.from_dataframe(df_filtrado)
 
-            # Configuración xeral por defecto
             gb.configure_default_column(
                 resizable=True,
                 filter=True,
                 sortable=True,
             )
-
-            # --- Columnas concretas ---
 
             gb.configure_column(
                 "fecha_concesion",
@@ -412,55 +426,24 @@ try:
                 clipboardDelimiter="\t",
             )
 
+            # Cálculo de altura elástica para Táboa 1 (mínimo 180px, máximo 800px)
+            altura_t1 = max(180, min(800, len(df_tabla1) * 55 + 60))
+
             AgGrid(
                 df_tabla1,
                 gridOptions=grid_options,
-                height=1000,
+                height=altura_t1,
                 allow_unsafe_jscode=True,
                 theme="streamlit",
                 enable_enterprise_modules=False,
                 fit_columns_on_grid_load=False,
             )
 
-            # =========================================================
-            # OLD DATAFRAME!!!! (non era multilinea en Convocatoria)
-            # =========================================================
-            # st.dataframe(
-            #     tabela_estilizada, 
-            #     height=800,
-            #     use_container_width=True,
-            #     hide_index=True, 
-            #     column_config={
-            #         "fecha_concesion": st.column_config.DatetimeColumn("Data", format="DD/MM/YYYY"),
-            #         "url_persona": st.column_config.LinkColumn(
-            #             "ID Persoa",
-            #             help="Fai clic para ver as concesións desta persoa/entidade",
-            #             display_text=r"https://www\.pap\.hacienda\.gob\.es/bdnstrans/GE/es/concesiones/consulta/(.*)"
-            #         ),
-            #         "beneficiario": "Beneficiario",
-            #         "importe": "Importe",
-            #         "concedente": "Concedente",
-            #         "url_convocatoria": st.column_config.LinkColumn(
-            #             "Nº Convocatoria",
-            #             help="Fai clic para abrir a convocatoria na BDNS",
-            #             display_text=r"https://www\.pap\.hacienda\.gob\.es/bdnstrans/GE/es/convocatorias/(.*)"
-            #         ),
-            #         "convocatoria": st.column_config.TextColumn(
-            #             "Convocatoria",
-            #             help="Descrición da convocatoria da subvención",
-            #             width="large"
-            #         ),
-            #         "bases_reguladoras": st.column_config.LinkColumn(
-            #             "Bases Reguladoras",
-            #             help="Ligazón ás bases reguladoras no boletín correspondente",
-            #             display_text="Ver Bases"
-            #         )
-            #     }
-            # )
-
             # TÁBOA 2: RESUMO POR BENEFICIARIO
             st.subheader("👥 Resumo por Beneficiario")
             
+            total_acumulado = df['importe'].sum()
+
             resumo_beneficiarios = (
                 df.groupby('beneficiario')
                 .agg(
@@ -474,19 +457,35 @@ try:
                 .sort_values(by='importe_total', ascending=False)
             )
 
+            resumo_beneficiarios['porcentaxe_total'] = (
+                (resumo_beneficiarios['importe_total'] / total_acumulado * 100)
+                if total_acumulado > 0 else 0
+            )
+
+            columnas_resumo_ben = [
+                'beneficiario', 'importe_total', 'porcentaxe_total',
+                'numero_subvencions', 'importe_medio', 'primeira_subvencion', 'ultima_subvencion'
+            ]
+            resumo_beneficiarios = resumo_beneficiarios[columnas_resumo_ben]
+
             resumo_estilizado = resumo_beneficiarios.style.format({
                 'importe_total': formato_euros,
+                'porcentaxe_total': lambda x: f"{x:,.2f}".replace(".", ",") + " %",
                 'importe_medio': formato_euros
             })
 
+            # Cálculo de altura elástica para Resumo por Beneficiario (mínimo 140px, máximo 600px)
+            altura_ben = max(140, min(600, (len(resumo_beneficiarios) + 1) * 38 + 25))
+
             st.dataframe(
                 resumo_estilizado,
-                height=700,
+                height=altura_ben,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
                     "beneficiario": "Nome do Beneficiario",
                     "importe_total": "Importe Total",
+                    "porcentaxe_total": "% do Total",
                     "numero_subvencions": "Nº Subvencións",
                     "importe_medio": "Importe Medio",
                     "primeira_subvencion": st.column_config.DatetimeColumn("1ª Concesión", format="DD/MM/YYYY"),
@@ -515,9 +514,12 @@ try:
                 'importe_medio': formato_euros
             })
 
+            # Cálculo de altura elástica para Resumo por Concedente (mínimo 140px, máximo 500px)
+            altura_conc = max(140, min(500, (len(resumo_concedentes) + 1) * 38 + 25))
+
             st.dataframe(
                 resumo_conc_estilizado,
-                height=400,
+                height=altura_conc,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
@@ -623,10 +625,13 @@ try:
                 clipboardDelimiter="\t",
             )
 
+            # Cálculo de altura elástica para Táboa 4 (mínimo 180px, máximo 600px)
+            altura_conv = max(180, min(600, len(df_conv_filtrado) * 55 + 60))
+
             AgGrid(
                 df_conv_filtrado,
                 gridOptions=grid_options_conv,
-                height=500,
+                height=altura_conv,
                 allow_unsafe_jscode=True,
                 theme="streamlit",
                 enable_enterprise_modules=False,
