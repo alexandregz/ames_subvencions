@@ -2,3 +2,4 @@ streamlit
 pandas
 plotly
 bdns-fetch
+streamlit-aggrid
