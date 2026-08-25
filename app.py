@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os
+import re
 import logging
 from datetime import datetime
 from bdns.fetch.client import BDNSClient 
@@ -44,7 +45,31 @@ def arranxar_url(url):
         return 'https://' + url_str
     return url_str
 
-@st.cache_data(ttl=86400)
+def deducir_area(texto):
+    if not isinstance(texto, str):
+        return ""
+    txt = texto.lower()
+    if re.search(r"empresas|promoción del comercio|escaparates|hostelería|audiovisual|decoración de navidad|concurso de premios", txt):
+        return "Comercio"
+    if re.search(r"educativos|educación", txt):
+        return "Educación"
+    if re.search(r"literario|culturales", txt):
+        return "Cultura"
+    if re.search(r"festejos|fiestas|baila con ames|canta con ames", txt):
+        return "Festas"
+    if re.search(r"deportivas|deporte|clubs|deportistas", txt):
+        return "Deporte"
+    if re.search(r"protección civil", txt):
+        return "Protección Civil"
+    if re.search(r"nominativa", txt):
+        return "Nominativa"
+    if re.search(r"servicios sociales|inclusión|familias numerosas", txt):
+        return "Servizos Sociais"
+    if re.search(r"premio lengua|galetiktokers", txt):
+        return "Lingua"
+    return ""
+
+@st.cache_data(ttl=86400, show_spinner="⏳ Cargando datos base de BDNS...")
 def cargar_datos_base(ambito_busca, nif_beneficiario, numero_convocatoria):
     client = BDNSClient()
     
@@ -116,6 +141,7 @@ def cargar_datos_base(ambito_busca, nif_beneficiario, numero_convocatoria):
 
     df['url_convocatoria'] = "https://www.pap.hacienda.gob.es/bdnstrans/GE/es/convocatorias/" + df['numero_convocatoria']
     df['url_persona'] = "https://www.pap.hacienda.gob.es/bdnstrans/GE/es/concesiones/consulta/" + df['id_persona']
+    df['area'] = df['convocatoria'].apply(deducir_area)
 
     df['ano'] = df['fecha_concesion'].dt.year
     df['ano_mes'] = df['fecha_concesion'].dt.to_period('M').astype(str)
@@ -267,10 +293,10 @@ try:
                 'importe': formato_euros
             })
 
-
-
+            # ====================================
+            # AgGrid (para multilinea)
+            # ====================================
             from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
-
 
             # --- Renderer JS para converter URL en link clicable ---
             link_renderer = JsCode("""
@@ -299,10 +325,9 @@ try:
             }
             """)
 
-
             df_filtrado = df_tabla1[columnas_tabela]
 
-            gb = GridOptionsBuilder.from_dataframe(df_filtrado)   # <-- df, non tabela_estilizada
+            gb = GridOptionsBuilder.from_dataframe(df_filtrado)
 
             # Configuración xeral por defecto
             gb.configure_default_column(
@@ -324,7 +349,7 @@ try:
                 "url_persona",
                 header_name="ID Persoa",
                 cellRenderer=link_renderer, maxWidth=90,
-                tooltipField="url_persona",  # amosa a URL completa ao pasar o rato
+                tooltipField="url_persona",
             )
 
             gb.configure_column(
@@ -338,7 +363,7 @@ try:
                 header_name="Importe",
                 type=["numericColumn"],
                 valueFormatter=euro_formatter, maxWidth=90,
-                cellStyle={"textAlign": "right"},  # números normalmente alíñanse á dereita
+                cellStyle={"textAlign": "right"},
             )
 
             gb.configure_column(
@@ -360,14 +385,14 @@ try:
                 autoHeight=True,
                 cellStyle={"white-space": "normal", "line-height": "1.4"},
                 minWidth=300, flex=2,
-                tooltipField="convocatoria",  # texto completo en tooltip tamén
+                tooltipField="convocatoria",
             )
 
             gb.configure_column(
                 "bases_reguladoras",
                 header_name="Bases reguladoras",
                 cellRenderer=link_renderer,
-                tooltipField="bases_reguladoras",  # amosa a URL completa ao pasar o rato
+                tooltipField="bases_reguladoras",
             )
 
             grid_options = gb.build()
@@ -382,9 +407,9 @@ try:
             """)
 
             gb.configure_grid_options(
-                enableRangeSelection=True,   # permite seleccionar un rango de celdas (como en Excel)
-                enableCellTextSelection=True,  # permite selección de texto dentro da celda tamén
-                clipboardDelimiter="\t",     # para que ao pegar en Excel/Sheets respecte columnas
+                enableRangeSelection=True,
+                enableCellTextSelection=True,
+                clipboardDelimiter="\t",
             )
 
             AgGrid(
@@ -393,12 +418,13 @@ try:
                 height=1000,
                 allow_unsafe_jscode=True,
                 theme="streamlit",
-                enable_enterprise_modules=False,  # deixa en False, non fai falta
+                enable_enterprise_modules=False,
                 fit_columns_on_grid_load=False,
             )
 
-
-            
+            # =========================================================
+            # OLD DATAFRAME!!!! (non era multilinea en Convocatoria)
+            # =========================================================
             # st.dataframe(
             #     tabela_estilizada, 
             #     height=800,
@@ -455,7 +481,7 @@ try:
 
             st.dataframe(
                 resumo_estilizado,
-                height=400,
+                height=700,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
@@ -470,7 +496,7 @@ try:
 
             # TÁBOA 3: RESUMO POR CONCEDENTE
             st.subheader("🏛️ Resumo por Concedente")
-            
+           
             resumo_concedentes = (
                 df.groupby('concedente')
                 .agg(
@@ -501,6 +527,58 @@ try:
                     "importe_medio": "Importe Medio",
                     "primeira_subvencion": st.column_config.DatetimeColumn("1ª Concesión", format="DD/MM/YYYY"),
                     "ultima_subvencion": st.column_config.DatetimeColumn("Última Concesión", format="DD/MM/YYYY")
+                }
+            )
+
+            # TÁBOA 4: RESUMO POR CONVOCATORIA
+            st.subheader("📋 Resumo por Convocatoria")
+
+            resumo_convocatorias = (
+                df.groupby('numero_convocatoria')
+                .agg(
+                    url_convocatoria=('url_convocatoria', 'first'),
+                    convocatoria=('convocatoria', 'first'),
+                    area=('area', 'first'),
+                    concedente=('concedente', 'first'),
+                    numero_beneficiarios=('beneficiario', 'nunique'),
+                    importe_total=('importe', 'sum'),
+                    bases_reguladoras=('bases_reguladoras', 'first')
+                )
+                .reset_index()
+            )
+
+            columnas_resumo_conv = [
+                'url_convocatoria', 'convocatoria', 'area', 'concedente',
+                'numero_beneficiarios', 'importe_total', 'bases_reguladoras'
+            ]
+
+            resumo_convocatorias = resumo_convocatorias[columnas_resumo_conv].sort_values(by='importe_total', ascending=False)
+
+            resumo_conv_estilizado = resumo_convocatorias.style.format({
+                'importe_total': formato_euros
+            })
+
+            st.dataframe(
+                resumo_conv_estilizado,
+                height=400,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "url_convocatoria": st.column_config.LinkColumn(
+                        "Nº Convocatoria",
+                        help="Fai clic para abrir a convocatoria na BDNS",
+                        display_text=r"https://www\.pap\.hacienda\.gob\.es/bdnstrans/GE/es/convocatorias/(.*)"
+                    ),
+                    "convocatoria": st.column_config.TextColumn("Convocatoria", width="large"),
+                    "area": "Área",
+                    "concedente": "Concedente",
+                    "numero_beneficiarios": "Nº Total Beneficiarios",
+                    "importe_total": "Importe Total Concedido",
+                    "bases_reguladoras": st.column_config.LinkColumn(
+                        "Bases Reguladoras",
+                        help="Ligazón ás bases reguladoras",
+                        display_text="Ver Bases"
+                    )
                 }
             )
 
