@@ -57,7 +57,7 @@ REGLAS_AREAS = [
     (r"educativos|educación", "Educación"),
     (r"literario|culturales", "Cultura"),
     (r"festejos|fiestas|baila con ames|canta con ames", "Festas"),
-    (r"deportivas|deporte|clubs|deportistas|bertamiráns fc|milladoiro sd|milladorio sd", "Deporte"),
+    (r"deportivas|deporte|clubs|deportistas", "Deporte"),
     (r"protección civil", "Protección Civil"),
     (r"nominativa", "Nominativa"),
     (r"servicios sociales|inclusión|familias numerosas", "Servizos Sociais"),
@@ -509,8 +509,20 @@ try:
                 .sort_values(by='importe_total', ascending=False)
             )
 
+            resumo_concedentes['porcentaxe_total'] = (
+                (resumo_concedentes['importe_total'] / total_acumulado * 100)
+                if total_acumulado > 0 else 0
+            )
+
+            columnas_resumo_conc = [
+                'concedente', 'importe_total', 'porcentaxe_total',
+                'numero_subvencions', 'importe_medio', 'primeira_subvencion', 'ultima_subvencion'
+            ]
+            resumo_concedentes = resumo_concedentes[columnas_resumo_conc]
+
             resumo_conc_estilizado = resumo_concedentes.style.format({
                 'importe_total': formato_euros,
+                'porcentaxe_total': lambda x: f"{x:,.2f}".replace(".", ",") + " %",
                 'importe_medio': formato_euros
             })
 
@@ -525,6 +537,7 @@ try:
                 column_config={
                     "concedente": "Organismo Concedente",
                     "importe_total": "Importe Total Concedido",
+                    "porcentaxe_total": "% do Total",
                     "numero_subvencions": "Nº Subvencións",
                     "importe_medio": "Importe Medio",
                     "primeira_subvencion": st.column_config.DatetimeColumn("1ª Concesión", format="DD/MM/YYYY"),
