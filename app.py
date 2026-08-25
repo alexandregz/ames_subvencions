@@ -172,13 +172,19 @@ try:
     if df.empty:
         st.warning("Non se atoparon datos dispoñibles co ámbito seleccionado.")
     else:
+        # AQUÍ ESTÁ O MECANISMO DE SEGURIDADE RESTAURADO
         if nif_beneficiario.strip() and 'nif' in df.columns:
             filtro_nif = nif_beneficiario.strip().lower()
-            df = df[df['nif'].astype(str).str.lower().str.contains(filtro_nif, na=False)]
+            df_nif_check = df[df['nif'].astype(str).str.lower().str.contains(filtro_nif, na=False)]
+            if not df_nif_check.empty:
+                df = df_nif_check
+            # Se queda baleiro, non sobrescribimos df, asumimos que a API xa filtrou ben pero o NIF vén enmascarado.
 
         if numero_convocatoria.strip() and not df.empty:
             filtro_conv = numero_convocatoria.strip()
-            df = df[df['numero_convocatoria'].astype(str) == filtro_conv]
+            df_conv_check = df[df['numero_convocatoria'].astype(str) == filtro_conv]
+            if not df_conv_check.empty:
+                df = df_conv_check
 
         if not df.empty and area_seleccionada != "Tódalas áreas":
             if area_seleccionada == "Sen clasificar":
@@ -293,7 +299,6 @@ try:
             gb1.configure_column("convocatoria", header_name="Convocatoria", wrapText=True, autoHeight=True, width=450, cellStyle={"line-height": "1.4", "padding-top": "8px", "padding-bottom": "8px"})
             gb1.configure_column("bases_reguladoras", header_name="Bases reg.", cellRenderer=link_renderer, width=120)
 
-            # PERMISO DE SELECCIÓN E COPIAR DO PORTAPAPEIS (SOLUCIÓN ONLINE)
             gb1.configure_grid_options(
                 enableRangeSelection=True,
                 enableCellTextSelection=True,
@@ -417,7 +422,6 @@ try:
             gb4.configure_column("importe_total", header_name="Importe Total", type=["numericColumn"], valueFormatter=euro_formatter, width=150)
             gb4.configure_column("bases_reguladoras", header_name="Bases reg.", cellRenderer=link_renderer, width=120)
 
-            # PERMISO DE SELECCIÓN E COPIAR DO PORTAPAPEIS
             gb4.configure_grid_options(
                 enableRangeSelection=True,
                 enableCellTextSelection=True,
